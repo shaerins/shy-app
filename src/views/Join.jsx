@@ -1,172 +1,248 @@
-import React from 'react';
-import { Link, Redirect } from 'react-router-dom';
-import { withFirebase } from '../components/firebase';
-import { connect } from 'react-redux';
-import './Join.scss';
+import React from 'react'
+import { Link, Redirect } from 'react-router-dom'
+import { connect } from 'react-redux'
+import { withFirebase } from '../components/firebase'
+import { debounce } from '../utils'
+
+import './Join.scss'
 
 class Join extends React.Component {
-	constructor(props) {
-		super(props);
-		this.state = {
-			name: '',
-			username: '',
-			email: '',
-			password: '',
-			interests: '',
-		}
+  checkIfUsernameExists = debounce((isValidUsername) => {
+    const { firebase, username } = this.props
+    if (isValidUsername) {
+      firebase.doUsernameExistsCheck(username).then((res) => {
+        console.log(res)
+        this.setState({
+          usernameIsAvailable: !res.exists,
+          checkingUsernameExists: false,
+        })
+      })
+    } else {
+      this.setState({
+        usernameIsAvailable: false,
+        checkingUsernameExists: false,
+      })
+    }
+  }, 2000)
 
-		this.handleChange = this.handleChange.bind(this);
-	}
-	handleChange(event) {
-		const { name, value } = event.target;
-		const isValidUsername = (name === 'username' && value.length > 4);
+  constructor(props) {
+    super(props)
+    this.state = {
+      name: '',
+      username: '',
+      email: '',
+      password: '',
+      interests: '',
+    }
 
-		this.setState(
-			{ 
-				[name]: value,
-				...(isValidUsername && { checkingUsernameExists: true }),
-			}, () => {
-				if (isValidUsername) {
-					this.props.firebase.doUsernameExistsCheck(this.state.username)
-						.then((res) => {
-							this.setState({
-								usernameIsAvailable: !res.exists,
-								checkingUsernameExists: false,
-							});
-						});
-				} else {
-					this.setState({
-						usernameIsAvailable: false,
-						checkingUsernameExists: false,
-					});
-				}
-		});
-  };
-	render() {
-		if(this.props.user.isSignedIn) return (<Redirect to="/profile"/>);
+    this.handleChange = this.handleChange.bind(this)
+  }
 
-		const { name, username, email, password, interests, usernameIsAvailable, checkingUsernameExists } = this.state;
-		return (
-			<form className="section">
-				<h1>
-					Sign Up
-				</h1>
-				<p>
-					Join a community that listens!
-				</p>
-				<div className="field">
-					<label className="label">Name</label>
-					<div className="control">
-						<input className="input" type="text" name="name" value={name} onChange={this.handleChange}/>
-					</div>
-				</div>
+  handleChange(event) {
+    const { name, value } = event.target
+    const isValidUsername = name === 'username' && value.length > 4
 
-				<div className="field">
-					<label className="label">Username</label>
-					<div className="control">
-						<input className="input" type="text" name="username" value={username} onChange={this.handleChange}/>
-					</div>
-					{ checkingUsernameExists ? 
-						<p className="help">Checking if username is available...</p>
-						:
-						(
-							usernameIsAvailable ? <p className="help">Username is available!</p>
-							:
-							( this.state.username.length > 4 ? <p className="help">Username is not available.</p> : <div></div>)
-						)
-					}
-				</div>
+    this.setState(
+      () => ({
+        [name]: value,
+        ...(isValidUsername && { checkingUsernameExists: true }),
+      }),
+      () => this.checkIfUsernameExists(isValidUsername)
+    )
+  }
 
-				<div className="field">
-					<label className="label">Email</label>
-					<div className="control">
-						<input className="input" type="text" name="email" value={email} onChange={this.handleChange}/>
-					</div>
-				</div>
+  render() {
+    const { user, firebase } = this.props
+    if (user.isSignedIn) return <Redirect to="/profile" />
 
-				<div className="field">
-					<label className="label">Password</label>
-					<div className="control">
-						<input className="input" type="password" name="password" value={password} onChange={this.handleChange}/>
-					</div>
-				</div>
+    const {
+      name,
+      username,
+      email,
+      password,
+      interests,
+      usernameIsAvailable,
+      checkingUsernameExists,
+    } = this.state
 
-				<div className="field">
-					<label className="label">Interests</label>
-					<div className="control">
-						<textarea
-							className="textarea"
-							name="interests"
-							value={interests}
-							onChange={this.handleChange}
-						>
-						</textarea>
-					</div>
-				</div>
+    const usernameAvailabilityMessage = () => {
+      if (checkingUsernameExists) {
+        return (
+          <p className="help">
+            {usernameIsAvailable
+              ? 'Username is available!'
+              : 'Checking if username is available...'}
+          </p>
+        )
+      }
+      if (username.length > 4) {
+        return <p className="help">Username is not available</p>
+      }
 
-				<div className="field">
-					<div className="control">
-						<label className="checkbox">
-							<input type="checkbox" />
-							<span className="checkbox-label">
-								I agree to the <a href="https://google.com">terms and conditions</a>
-							</span>
-						</label>
-					</div>
-				</div>
+      return null
+    }
 
-				<div className="field is-grouped">
-					<div className="control">
-						<button 
-							className="button is-primary"
-							onClick={(e) => {
-								e.preventDefault();
-								this.props.firebase.doUsernameExistsCheck(this.state.username)
-									.then(res => {
-										if(!res.exists) { // create user if username isn't taken.
-											this.props.firebase.doCreateUserWithEmailAndPassword(email, password)
-												.then(authUser => {
-													this.props.firebase.doUserInfoEdit(authUser.user.uid, {
-														name: this.state.name,
-														username: this.state.username,
-														email: this.state.email,
-														interests: this.state.interests.split(','),
-													})
-													.then(() => {
-														this.props.firebase.doUsernameRegister(this.state.username, authUser.user.uid);
-													})
-													.then(() => {
-														this.props.firebase.doSignInWithEmailAndPassword(this.state.email, this.state.password);
-													});
-												})
-												.catch(error => {
-													// this.setState({ error });
-													console.log(error);
-												});
-											}
-										})
-									.catch(err => {
-										console.log(err);
-									});
-							}}
-						>
-							Sign up
-						</button>
-					</div>
-					<div className="control to-login">
-						<Link to="/login" className="is-text">Already have an account?</Link>
-					</div>
-				</div>
-			</form>
-		);
-	}
+    return (
+      <form className="section">
+        <h1>Sign Up</h1>
+        <p>Join a community that listens!</p>
+        <div className="field">
+          <div className="control">
+            <label htmlFor="name" className="label">
+              Name
+              <input
+                className="input"
+                id="name"
+                type="text"
+                name="name"
+                value={name}
+                onChange={this.handleChange}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="field">
+          <div className="control">
+            <label htmlFor="username" className="label">
+              Username
+              <input
+                className="input"
+                id="username"
+                type="text"
+                name="username"
+                value={username}
+                onChange={this.handleChange}
+              />
+            </label>
+          </div>
+          {usernameAvailabilityMessage()}
+        </div>
+
+        <div className="field">
+          <div className="control">
+            <label htmlFor="email" className="label">
+              Email
+              <input
+                className="input"
+                id="email"
+                type="text"
+                name="email"
+                value={email}
+                onChange={this.handleChange}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="field">
+          <div className="control">
+            <label htmlFor="password" className="label">
+              Password
+              <input
+                className="input"
+                id="password"
+                type="password"
+                name="password"
+                value={password}
+                onChange={this.handleChange}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="field">
+          <div className="control">
+            <label htmlFor="interests" className="label">
+              Interests
+              <textarea
+                className="textarea"
+                id="interests"
+                name="interests"
+                value={interests}
+                onChange={this.handleChange}
+              />
+            </label>
+          </div>
+          <p className="help">Comma-separated list of interests.</p>
+        </div>
+
+        <div className="field">
+          <div className="control">
+            <label htmlFor="checkbox" className="checkbox">
+              <input type="checkbox" id="checkbox" />
+              <span className="checkbox-label">
+                I agree to the
+                <a href="https://google.com"> terms and conditions</a>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div className="field is-grouped">
+          <div className="control">
+            <button
+              type="button"
+              className="button is-primary"
+              onClick={(e) => {
+                e.preventDefault()
+                firebase
+                  .doUsernameExistsCheck(username)
+                  .then((res) => {
+                    if (!res.exists) {
+                      // create user if username isn't taken.
+                      firebase
+                        .doCreateUserWithEmailAndPassword(email, password)
+                        .then((authUser) => {
+                          firebase
+                            .doUserInfoEdit(authUser.user.uid, {
+                              name,
+                              username,
+                              email,
+                              interests: interests.toLowerCase().split(','),
+                            })
+                            .then(() => {
+                              firebase.doUsernameRegister(
+                                username,
+                                authUser.user.uid
+                              )
+                            })
+                            .then(() => {
+                              firebase.doSignInWithEmailAndPassword(
+                                email,
+                                password
+                              )
+                            })
+                        })
+                        .catch((error) => {
+                          // this.setState({ error });
+                          console.log(error)
+                        })
+                    }
+                  })
+                  .catch((err) => {
+                    console.log(err)
+                  })
+              }}
+            >
+              Sign up
+            </button>
+          </div>
+          <div className="control to-login">
+            <Link to="/login" className="is-text">
+              Already have an account?
+            </Link>
+          </div>
+        </div>
+      </form>
+    )
+  }
 }
-
 
 const mapStateToProps = (state) => {
-	return {
-		user: state.user,
-	}
+  return {
+    user: state.user,
+  }
 }
 
-export default connect(mapStateToProps)(withFirebase(Join));
+export default connect(mapStateToProps)(withFirebase(Join))
